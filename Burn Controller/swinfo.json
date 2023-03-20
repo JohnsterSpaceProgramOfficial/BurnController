@@ -4,7 +4,7 @@
   "name": "Burn Controller",
   "description": "Lets you set up engine burns.",
   "source": "https://github.com/JohnsterSpaceProgramOfficial/BurnController",
-  "version": "0.7.0",
+  "version": "0.6.0",
   "version_check": "https://github.com/JohnsterSpaceProgramOfficial/BurnController/raw/main/Burn%20Controller/swinfo.json",
   "dependencies": [
     {
