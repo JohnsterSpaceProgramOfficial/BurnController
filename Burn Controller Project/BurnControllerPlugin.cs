@@ -10,6 +10,9 @@ using SpaceWarp.API.UI;
 using SpaceWarp.API.UI.Appbar;
 using UnityEngine;
 using KSP.Sim.impl;
+using KSP.Sim.Maneuver;
+using KSP.Sim;
+using KSP.Game;
 
 namespace BurnController;
 
@@ -53,6 +56,9 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         // Register all Harmony patches in the project
         Harmony.CreateAndPatchAll(typeof(BurnControllerPlugin).Assembly);
 
+        //Initialize the default burn type as ManualBurn
+        SetBurnType(BurnType.ManualBurn);
+
         // Fetch a configuration value or create a default one if it does not exist
         //CFG_DebugMode = Config.Bind("Mod Settings", "Debug Mode", false, "Enable this to show the window on the title screen.");
 
@@ -62,39 +68,69 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
     private void Update()
     {
-        if (burnStatus == BurnStatus.Waiting && getTimeBefore)
+        if (burnType == BurnType.ManualBurn)
         {
-            if (timeBeforeBurn > 0)
+            if (burnStatus == BurnStatus.Waiting && getTimeBefore)
             {
-                timeBeforeBurn -= 1f * Time.deltaTime;
-            }
-            else if (timeBeforeBurn <= 0)
-            {
-                SetBurnStatus(BurnStatus.InProgress);
-                getTimeBefore = false;
-            }
-        }
-        if (burnStatus == BurnStatus.InProgress && getTimeLeft)
-        {
-            if (timeLeftToBurn > 0)
-            {
-                if (hasActiveVehicle)
+                if (timeBeforeBurn > 0)
                 {
-                    activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                    timeBeforeBurn -= 1f * Time.deltaTime;
                 }
-                timeLeftToBurn -= 1f * Time.deltaTime;
+                else if (timeBeforeBurn <= 0)
+                {
+                    SetBurnStatus(BurnStatus.InProgress);
+                    getTimeBefore = false;
+                }
             }
-            else if (timeLeftToBurn <= 0)
+            if (burnStatus == BurnStatus.InProgress && getTimeLeft)
+            {
+                if (timeLeftToBurn > 0)
+                {
+                    if (hasActiveVehicle)
+                    {
+                        activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                    }
+                    timeLeftToBurn -= 1f * Time.deltaTime;
+                }
+                else if (timeLeftToBurn <= 0)
+                {
+                    activeVessel.SetMainThrottle(0f);
+                    SetBurnStatus(BurnStatus.Completed);
+                    getTimeLeft = false;
+                }
+            }
+            if (burnStatus == BurnStatus.Stopped)
             {
                 activeVessel.SetMainThrottle(0f);
-                SetBurnStatus(BurnStatus.Completed);
-                getTimeLeft = false;
+                hasActiveVehicle = false;
             }
         }
-        if (burnStatus == BurnStatus.Stopped)
+        else if (burnType == BurnType.ManeuverBurn)
         {
-            activeVessel.SetMainThrottle(0f);
-            hasActiveVehicle = false;
+            if (!hasManeuverNode)
+            {
+                FindManeuverNode();
+            }
+            else
+            {
+                var timeWarp = GetTimeWarp();
+                var burnStartTime = GetManeuverBurnStartTime(maneuverNode);
+                var burnEndTime = GetManeuverBurnEndTime(maneuverNode);
+                if (burnEndTime < 0)
+                {
+                    activeVessel.SetMainThrottle(0f);
+                    SetBurnStatus(BurnStatus.Completed);
+                }
+                else if (burnStartTime < 0)
+                {
+                    if (timeWarp.CurrentRateIndex != 0)
+                    {
+                        timeWarp.SetRateIndex(0, false);
+                    }
+                    activeVessel.SetMainThrottle(1f);
+                    SetBurnStatus(BurnStatus.InProgress);
+                }
+            }
         }
     }
 
@@ -340,95 +376,149 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                     if (GUILayout.Button("<size=30>SETUP BURN</size>", GUILayout.Height(40)))
                     {
                         SetBurnStatus(BurnStatus.Waiting);
+                        SetBurnType(BurnType.ManualBurn);
                     }
                 }
+            }
+            if (GUILayout.Button("<size=30>SETUP MANEUVER BURN</size>", GUILayout.Height(40)))
+            {
+                SetBurnStatus(BurnStatus.Waiting);
+                SetBurnType(BurnType.ManeuverBurn);
             }
         }
         else
         {
-            if (timeLeftToBurn <= 0 && burnStatus == BurnStatus.Completed)
+            if (burnType == BurnType.ManualBurn)
             {
-                GUILayout.Label("<color=#00FF00><size=30>Burn Complete!</size></color>");
-                if (GUILayout.Button("<size=30>RETURN</size>", GUILayout.Height(40)))
+                if (timeLeftToBurn <= 0 && burnStatus == BurnStatus.Completed)
                 {
-                    getTimeLeft = false;
-                    getTimeBefore = false;
-                    if (startEngines)
+                    GUILayout.Label("<color=#00FF00><size=30>Burn Complete!</size></color>");
+                    if (GUILayout.Button("<size=30>RETURN</size>", GUILayout.Height(40)))
                     {
-                        activeVessel = Vehicle.ActiveVesselVehicle;
-                        if (activeVessel != null)
+                        getTimeLeft = false;
+                        getTimeBefore = false;
+                        if (startEngines)
                         {
-                            hasActiveVehicle = false;
+                            activeVessel = Vehicle.ActiveVesselVehicle;
+                            if (activeVessel != null)
+                            {
+                                hasActiveVehicle = false;
+                            }
+                            startEngines = false;
                         }
-                        startEngines = false;
+                        SetBurnStatus(BurnStatus.None);
                     }
-                    SetBurnStatus(BurnStatus.None);
+                }
+            }
+            else if (burnType == BurnType.ManeuverBurn)
+            {
+                if (burnStatus == BurnStatus.Completed)
+                {
+                    GUILayout.Label("<color=#00FF00><size=30>Burn Complete!</size></color>");
+                    GUILayout.Label("<size=20>Delete Your Maneuver Node To Return...</size>");
+                    if (!hasManeuverNode)
+                    {
+                        SetBurnStatus(BurnStatus.None);
+                        SetBurnType(BurnType.ManualBurn);
+                    }
                 }
             }
 
             if (burnStatus == BurnStatus.Waiting)
             {
-                if (!getTimeBefore)
+                if (burnType == BurnType.ManualBurn)
                 {
-                    float hoursToSeconds = hoursToBurnFloat * 60 * 60;
-                    float minutesToSeconds = minsToBurnFloat * 60;
-                    timeBeforeBurn = hoursToSeconds + minutesToSeconds + secsToBurnFloat;
-                    getTimeBefore = true;
-                }
-                if (timeBeforeBurn > 30)
-                {
-                    GUILayout.Label("<color=#00FF00><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
-                }
-                else if (timeBeforeBurn > 10 && timeBeforeBurn < 30)
-                {
-                    GUILayout.Label("<color=#FF8000><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
-                }
-                else if (timeBeforeBurn < 10 && timeBeforeBurn > 0)
-                {
-                    GUILayout.Label("<color=#FF0000><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
-                }
+                    if (!getTimeBefore)
+                    {
+                        float hoursToSeconds = hoursToBurnFloat * 60 * 60;
+                        float minutesToSeconds = minsToBurnFloat * 60;
+                        timeBeforeBurn = hoursToSeconds + minutesToSeconds + secsToBurnFloat;
+                        getTimeBefore = true;
+                    }
+                    if (timeBeforeBurn > 30)
+                    {
+                        GUILayout.Label("<color=#00FF00><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
+                    }
+                    else if (timeBeforeBurn > 10 && timeBeforeBurn < 30)
+                    {
+                        GUILayout.Label("<color=#FF8000><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
+                    }
+                    else if (timeBeforeBurn < 10 && timeBeforeBurn > 0)
+                    {
+                        GUILayout.Label("<color=#FF0000><size=25>Starting Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeBeforeBurn / 3600) % 24, Mathf.FloorToInt(timeBeforeBurn / 60) % 60, Mathf.FloorToInt(timeBeforeBurn % 60)) + "</size></color>");
+                    }
 
-                if (GUILayout.Button("<size=30>CANCEL BURN</size>", GUILayout.Height(40)))
+                    if (GUILayout.Button("<size=30>CANCEL BURN</size>", GUILayout.Height(40)))
+                    {
+                        getTimeBefore = false;
+                        SetBurnStatus(BurnStatus.None);
+                    }
+                }
+                else if (burnType == BurnType.ManeuverBurn)
                 {
-                    getTimeBefore = false;
-                    SetBurnStatus(BurnStatus.None);
+                    GUILayout.Label("<size=20>Waiting To Reach Maneuver To Start Burn...</size>");
+                    if (GUILayout.Button("<size=30>CANCEL MANEUVER BURN</size>", GUILayout.Height(40)))
+                    {
+                        if (hasManeuverNode)
+                        {
+                            hasManeuverNode = false;
+                        }
+                        SetBurnStatus(BurnStatus.None);
+                        SetBurnType(BurnType.ManualBurn);
+                    }
                 }
             }
             if (burnStatus == BurnStatus.InProgress)
             {
-                if (!startEngines)
+                if (burnType == BurnType.ManualBurn)
                 {
-                    activeVessel = Vehicle.ActiveVesselVehicle;
-                    if (activeVessel != null)
+                    if (!startEngines)
                     {
-                        hasActiveVehicle = true;
+                        activeVessel = Vehicle.ActiveVesselVehicle;
+                        if (activeVessel != null)
+                        {
+                            hasActiveVehicle = true;
+                        }
+                        startEngines = true;
                     }
-                    startEngines = true;
-                }
-                if (!getTimeLeft)
-                {
-                    float hoursToSeconds = burnLengthHoursFloat * 60 * 60;
-                    float minutesToSeconds = burnLengthMinsFloat * 60;
-                    timeLeftToBurn = hoursToSeconds + minutesToSeconds + burnLengthSecsFloat;
-                    getTimeLeft = true;
-                }
+                    if (!getTimeLeft)
+                    {
+                        float hoursToSeconds = burnLengthHoursFloat * 60 * 60;
+                        float minutesToSeconds = burnLengthMinsFloat * 60;
+                        timeLeftToBurn = hoursToSeconds + minutesToSeconds + burnLengthSecsFloat;
+                        getTimeLeft = true;
+                    }
 
-                if (timeLeftToBurn > 30)
-                {
-                    GUILayout.Label("<color=#00FF00><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
-                }
-                else if (timeLeftToBurn > 10 && timeLeftToBurn < 30)
-                {
-                    GUILayout.Label("<color=#FF8000><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
-                }
-                else if (timeLeftToBurn < 10 && timeLeftToBurn > 0)
-                {
-                    GUILayout.Label("<color=#FF0000><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
-                }
+                    if (timeLeftToBurn > 30)
+                    {
+                        GUILayout.Label("<color=#00FF00><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
+                    }
+                    else if (timeLeftToBurn > 10 && timeLeftToBurn < 30)
+                    {
+                        GUILayout.Label("<color=#FF8000><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
+                    }
+                    else if (timeLeftToBurn < 10 && timeLeftToBurn > 0)
+                    {
+                        GUILayout.Label("<color=#FF0000><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
+                    }
 
-                if (GUILayout.Button("<size=30>STOP BURN</size>", GUILayout.Height(40)))
+                    if (GUILayout.Button("<size=30>STOP BURN</size>", GUILayout.Height(40)))
+                    {
+                        SetBurnStatus(BurnStatus.Stopped);
+                    }
+                }
+                else if (burnType == BurnType.ManeuverBurn)
                 {
-                    SetBurnStatus(BurnStatus.Stopped);
+                    GUILayout.Label("<size=20>Burn Currently In Progress...</size>");
+                    if (GUILayout.Button("<size=30>STOP MANEUVER BURN</size>", GUILayout.Height(40)))
+                    {
+                        if (hasManeuverNode)
+                        {
+                            hasManeuverNode = false;
+                        }
+                        SetBurnStatus(BurnStatus.Stopped);
+                        SetBurnType(BurnType.ManualBurn);
+                    }
                 }
             }
             if (burnStatus == BurnStatus.Stopped)
@@ -457,6 +547,69 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         burnStatus = newStatus;
     }
 
+    private void SetBurnType(BurnType newType)
+    {
+        burnType = newType;
+    }
+
+    //A function that was added in the 0.8.0 update for finding the currently active manuever node
+    private void FindManeuverNode()
+    {
+        if (!hasManeuverNode)
+        {
+            activeVessel = Vehicle.ActiveVesselVehicle;
+            if (activeVessel != null)
+            {
+                activeVesselComponent = activeVessel.GetSimVessel();
+                maneuverPlan = activeVessel.SimulationObject.FindComponent<ManeuverPlanComponent>();
+                if (maneuverPlan == null)
+                {
+                    return;
+                }
+                else
+                {
+                    maneuverNode = maneuverPlan.ActiveNode;
+                    if (maneuverNode == null)
+                    {
+                        return;
+                    }
+                    else
+                    {
+                        activeVesselComponent.SetAutopilotEnableDisable(true);
+                        activeVessel.SetAutopilotMode(AutopilotMode.Maneuver);
+                        hasManeuverNode = true;
+                        maneuverPlan.OnManeuverNodesRemoved += OnNodeRemoved;
+                    }
+                }
+            }
+        }
+    }
+
+    private void OnNodeRemoved(List<ManeuverNodeData> guid)
+    {
+        if (hasManeuverNode)
+        {
+            hasManeuverNode = false;
+        }
+    }
+
+    private static double GetManeuverBurnStartTime(ManeuverNodeData node)
+    {
+        var startTime = node.Time - Game.UniverseModel.UniversalTime;
+        return startTime;
+    }
+
+    private static double GetManeuverBurnEndTime(ManeuverNodeData node)
+    {
+        var endTime = node.Time + node.BurnDuration - Game.UniverseModel.UniversalTime;
+        return endTime;
+    }
+
+    private static TimeWarp GetTimeWarp()
+    {
+        return GameManager.Instance.Game.ViewController.TimeWarp;
+    }
+
     private enum BurnStatus
     {
         None,
@@ -464,6 +617,12 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         InProgress,
         Completed,
         Stopped
+    }
+
+    private enum BurnType
+    {
+        ManualBurn,
+        ManeuverBurn
     }
 
     private string secsToBurn = "0";
@@ -495,4 +654,12 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
     private BurnStatus burnStatus;
     private VesselVehicle activeVessel;
     private bool hasActiveVehicle = false;
+
+    //Variables added in the 0.8.0 update
+    private BurnType burnType;
+    private bool hasManeuverNode = false;
+    private ManeuverPlanComponent maneuverPlan;
+
+    private ManeuverNodeData maneuverNode;
+    private VesselComponent activeVesselComponent;
 }
