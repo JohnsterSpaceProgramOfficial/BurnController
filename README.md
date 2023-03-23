@@ -3,7 +3,7 @@ Burn Controller is a mod for Kerbal Space Program 2 that lets you set up engine 
 
 SpaceDock: https://spacedock.info/mod/3330/Burn%20Controller.
 
-KSP Forums: https://forum.kerbalspaceprogram.com/index.php?/topic/215587-burn-controller-080/.
+KSP Forums: https://forum.kerbalspaceprogram.com/index.php?/topic/215587-burn-controller-081/.
 
 # Installation
 1. Download and extract [SpaceWarp + BepInEx](https://spacedock.info/mod/3277/Space%20Warp%20+%20BepInEx) into the root directory of your copy of KSP 2.
