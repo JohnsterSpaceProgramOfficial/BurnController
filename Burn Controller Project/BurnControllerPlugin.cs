@@ -13,6 +13,7 @@ using KSP.Sim.impl;
 using KSP.Sim.Maneuver;
 using KSP.Sim;
 using KSP.Game;
+using System.Collections;
 
 namespace BurnController;
 
@@ -86,9 +87,23 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
             {
                 if (timeLeftToBurn > 0)
                 {
-                    if (hasActiveVehicle)
+                    if (constantThrottle) //If the use constant throttle toggle is checked, keep the thrust constant
                     {
-                        activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                        if (hasActiveVehicle)
+                        {
+                            activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                        }
+                    }
+                    else //If the use constant throttle toggle is unchecked, change the thrust over time
+                    {
+                        if (!startedThrustChanger)
+                        {
+                            if (hasActiveVehicle)
+                            {
+                                activeVessel.SetMainThrottle(currentThrust);
+                            }
+                            StartCoroutine(ChangeThrustOverTime(startThrust / 100f, endThrust / 100f, timeLeftToBurn));
+                        }
                     }
                     timeLeftToBurn -= 1f * Time.deltaTime;
                 }
@@ -152,7 +167,7 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                     FillWindow,
                     "<color=orange>// Burn Controller " + ModVer + "</color>",
                     GUILayout.Width(500),
-                    GUILayout.Height(200)
+                    GUILayout.Height(250)
                 );
             }
             else
@@ -269,25 +284,71 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("At...");
-            thrustPercentage = GUILayout.TextField(thrustPercentage, 3);
-            if (int.TryParse(thrustPercentage, out thrustPercentageInt))
+            if (constantThrottle)
             {
-                if (thrustPercentageInt > 100)
+                GUILayout.Label("At...");
+                thrustPercentage = GUILayout.TextField(thrustPercentage, 3);
+                if (int.TryParse(thrustPercentage, out thrustPercentageInt))
                 {
-                    thrustPercentage = GUILayout.TextField("100", 3);
+                    if (thrustPercentageInt > 100)
+                    {
+                        thrustPercentage = GUILayout.TextField("100", 3);
+                    }
+                    else if (thrustPercentageInt < 1)
+                    {
+                        thrustPercentage = GUILayout.TextField("1", 3);
+                    }
                 }
-                else if (thrustPercentageInt < 1)
+                if (thrustPercentage.Contains("."))
                 {
-                    thrustPercentage = GUILayout.TextField("1", 3);
+                    thrustPercentage = GUILayout.TextField(thrustPercentage.Remove(1), 3);
                 }
+                GUILayout.Label("% Throttle");
             }
-            if (thrustPercentage.Contains("."))
+            else
             {
-                thrustPercentage = GUILayout.TextField(thrustPercentage.Remove(1), 3);
+                GUILayout.Label("From...");
+                startThrustString = GUILayout.TextField(startThrustString, 3);
+                if (int.TryParse(startThrustString, out startThrust))
+                {
+                    if (startThrust > 100)
+                    {
+                        startThrustString = GUILayout.TextField("100", 3);
+                    }
+                    else if (startThrust < 1)
+                    {
+                        startThrustString = GUILayout.TextField("1", 3);
+                    }
+                }
+                if (startThrustString.Contains("."))
+                {
+                    startThrustString = GUILayout.TextField(startThrustString.Remove(1), 3);
+                }
+                GUILayout.Label("%");
+                GUILayout.Label("To...");
+                endThrustString = GUILayout.TextField(endThrustString, 3);
+                if (int.TryParse(endThrustString, out endThrust))
+                {
+                    if (endThrust > 100)
+                    {
+                        endThrustString = GUILayout.TextField("100", 3);
+                    }
+                    else if (endThrust < 1)
+                    {
+                        endThrustString = GUILayout.TextField("1", 3);
+                    }
+                }
+                if (endThrustString.Contains("."))
+                {
+                    endThrustString = GUILayout.TextField(endThrustString.Remove(1), 3);
+                }
+                GUILayout.Label("% Throttle");
             }
-            GUILayout.Label("% Throttle");
             GUILayout.EndHorizontal();
+
+            GUILayout.Space(5);
+            constantThrottle = GUILayout.Toggle(constantThrottle, " Use Constant Throttle?");
+            GUILayout.Space(5);
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("For A Total Duration Of...");
@@ -375,6 +436,10 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                 {
                     if (GUILayout.Button("<size=30>SETUP BURN</size>", GUILayout.Height(40)))
                     {
+                        if (!constantThrottle)
+                        {
+                            currentThrust = startThrust / 100f;
+                        }
                         SetBurnStatus(BurnStatus.Waiting);
                         SetBurnType(BurnType.ManualBurn);
                     }
@@ -534,11 +599,15 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                         hasActiveVehicle = false;
                         startEngines = false;
                     }
+                    if (!constantThrottle)
+                    {
+                        startedThrustChanger = false;
+                        StopCoroutine(ChangeThrustOverTime(0, 0, 0));
+                    }
                     SetBurnStatus(BurnStatus.None);
                 }
             }
         }
-
         GUI.DragWindow(new Rect(0, 0, 10000, 40));
     }
 
@@ -610,6 +679,19 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         return GameManager.Instance.Game.ViewController.TimeWarp;
     }
 
+    //Change a value (currentThrust) for the current amount of throttle over time.
+    private IEnumerator ChangeThrustOverTime(float startThrust, float endThrust, float burnDuration)
+    {
+        startedThrustChanger = true;
+        for (float t = 0f; t < burnDuration; t += 1f * Time.deltaTime)
+        {
+            currentThrust = Mathf.Lerp(startThrust, endThrust, t / burnDuration);
+            yield return null;
+        }
+        currentThrust = endThrust;
+        startedThrustChanger = false;
+    }
+
     private enum BurnStatus
     {
         None,
@@ -662,4 +744,15 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
     private ManeuverNodeData maneuverNode;
     private VesselComponent activeVesselComponent;
+
+    //Variables added in the 0.8.1 update
+    private bool constantThrottle = true;
+    private string startThrustString = "100";
+    private string endThrustString = "50";
+
+    private int startThrust = 100;
+    private int endThrust = 50;
+
+    private float currentThrust = 0f;
+    private bool startedThrustChanger = false;
 }
