@@ -5,6 +5,8 @@ SpaceDock: https://spacedock.info/mod/3330/Burn%20Controller.
 
 KSP Forums: https://forum.kerbalspaceprogram.com/index.php?/topic/215587-burn-controller-081/.
 
+![Kerbal Space Program 2 3_20_2023 10_45_11 PM Modified](https://user-images.githubusercontent.com/61912428/227299392-3278f166-d65d-4d03-8c2b-5f78a4e6115c.png)
+
 # Installation
 1. Download and extract [SpaceWarp + BepInEx](https://spacedock.info/mod/3277/Space%20Warp%20+%20BepInEx) into the root directory of your copy of KSP 2.
 2. Drag the contents of Burn Controller's zip file into the root directory of your KSP 2 installation.
