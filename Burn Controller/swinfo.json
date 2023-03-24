@@ -2,9 +2,9 @@
   "mod_id": "BurnController",
   "author": "JohnsterSpaceProgram",
   "name": "Burn Controller",
-  "description": "Lets you set up engine burns.",
+  "description": "Lets you set up engine burns. This is a prerelease version of the 0.9 update.",
   "source": "https://github.com/JohnsterSpaceProgramOfficial/BurnController",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "version_check": "https://github.com/JohnsterSpaceProgramOfficial/BurnController/raw/main/Burn%20Controller/swinfo.json",
   "dependencies": [
     {
