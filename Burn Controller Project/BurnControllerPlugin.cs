@@ -14,6 +14,7 @@ using KSP.Sim.Maneuver;
 using KSP.Sim;
 using KSP.Game;
 using System.Collections;
+using KSP.Sim.DeltaV;
 
 namespace BurnController;
 
@@ -65,6 +66,9 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
         // Log the config value into <KSP2 Root>/BepInEx/LogOutput.log
         //Logger.LogInfo($"Debug Mode: {CFG_DebugMode.Value}");
+        isPrerelease = true;
+        prereleaseName = "PRERELEASE";
+        isDebug = false;
     }
 
     private void Update()
@@ -87,11 +91,26 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
             {
                 if (timeLeftToBurn > 0)
                 {
+                    //Code for a possible 0.9 prerelease update
+                    if (!freezeTimeLeft)
+                    {
+                        currentDeltaV = GetCurrentDeltaV();
+                        if (currentDeltaV <= 0)
+                        {
+                            StartCoroutine(StageUntilEngineFound());
+                        }
+                    }
+                    //Code for a possible 0.9 prerelease update
+
                     if (constantThrottle) //If the use constant throttle toggle is checked, keep the thrust constant
                     {
                         if (hasActiveVehicle)
                         {
-                            activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                            //Code for a possible 0.9 prerelease update
+                            if (!freezeTimeLeft)
+                            {
+                                activeVessel.SetMainThrottle(thrustPercentageInt / 100f);
+                            }
                         }
                     }
                     else //If the use constant throttle toggle is unchecked, change the thrust over time
@@ -105,7 +124,12 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                             StartCoroutine(ChangeThrustOverTime(startThrust / 100f, endThrust / 100f, timeLeftToBurn));
                         }
                     }
-                    timeLeftToBurn -= 1f * Time.deltaTime;
+
+                    //Code for a possible 0.9 prerelease update
+                    if (!freezeTimeLeft)
+                    {
+                        timeLeftToBurn -= 1f * Time.deltaTime;
+                    }
                 }
                 else if (timeLeftToBurn <= 0)
                 {
@@ -149,6 +173,14 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         }
     }
 
+    private void LateUpdate()
+    {
+        if (Input.GetKeyDown(KeyCode.B) && isDebug)
+        {
+            _isWindowOpen = !_isWindowOpen;
+        }
+    }
+
     /// <summary>
     /// Draws a simple UI window when <code>this._isWindowOpen</code> is set to <code>true</code>.
     /// </summary>
@@ -159,27 +191,55 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
         if (_isWindowOpen)
         {
-            if (burnStatus == BurnStatus.None)
+            if (!isPrerelease)
             {
-                _windowRect = GUILayout.Window(
-                    GUIUtility.GetControlID(FocusType.Passive),
-                    _windowRect,
-                    FillWindow,
-                    "<color=orange>// Burn Controller " + ModVer + "</color>",
-                    GUILayout.Width(500),
-                    GUILayout.Height(250)
-                );
+                if (burnStatus == BurnStatus.None)
+                {
+                    _windowRect = GUILayout.Window(
+                        GUIUtility.GetControlID(FocusType.Passive),
+                        _windowRect,
+                        FillWindow,
+                        "<color=orange>// Burn Controller " + ModVer + "</color>",
+                        GUILayout.Width(500),
+                        GUILayout.Height(250)
+                    );
+                }
+                else
+                {
+                    _windowRect = GUILayout.Window(
+                        GUIUtility.GetControlID(FocusType.Passive),
+                        _windowRect,
+                        FillWindow,
+                        "<color=orange>// Burn Controller " + ModVer + "</color>",
+                        GUILayout.Width(500),
+                        GUILayout.Height(125)
+                    );
+                }
             }
             else
             {
-                _windowRect = GUILayout.Window(
-                    GUIUtility.GetControlID(FocusType.Passive),
-                    _windowRect,
-                    FillWindow,
-                    "<color=orange>// Burn Controller " + ModVer + "</color>",
-                    GUILayout.Width(500),
-                    GUILayout.Height(125)
-                );
+                if (burnStatus == BurnStatus.None)
+                {
+                    _windowRect = GUILayout.Window(
+                        GUIUtility.GetControlID(FocusType.Passive),
+                        _windowRect,
+                        FillWindow,
+                        "<color=#1AA7EC>// Burn Controller " + ModVer + " " + prereleaseName + "</color>",
+                        GUILayout.Width(600),
+                        GUILayout.Height(250)
+                    );
+                }
+                else
+                {
+                    _windowRect = GUILayout.Window(
+                        GUIUtility.GetControlID(FocusType.Passive),
+                        _windowRect,
+                        FillWindow,
+                        "<color=#1AA7EC>// Burn Controller " + ModVer + " " + prereleaseName + "</color>",
+                        GUILayout.Width(600),
+                        GUILayout.Height(125)
+                    );
+                }
             }
         }
     }
@@ -436,6 +496,9 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                 {
                     if (GUILayout.Button("<size=30>SETUP BURN</size>", GUILayout.Height(40)))
                     {
+                        //Code for a possible 0.9 prerelease update
+                        GetCurrentStage();
+                        //Code for a possible 0.9 prerelease update
                         if (!constantThrottle)
                         {
                             currentThrust = startThrust / 100f;
@@ -567,6 +630,13 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
                         GUILayout.Label("<color=#FF0000><size=25>Completing Burn In " + string.Format("{0:00}:{1:00}:{2:00}", Mathf.FloorToInt(timeLeftToBurn / 3600) % 24, Mathf.FloorToInt(timeLeftToBurn / 60) % 60, Mathf.FloorToInt(timeLeftToBurn % 60)) + "</size></color>");
                     }
 
+                    //Code for a possible 0.9 prerelease update
+                    if (freezeTimeLeft)
+                    {
+                        GUILayout.Label("Burn paused because engine ran out of fuel. Please wait...");
+                    }
+                    //Code for a possible 0.9 prerelease update
+
                     if (GUILayout.Button("<size=30>STOP BURN</size>", GUILayout.Height(40)))
                     {
                         SetBurnStatus(BurnStatus.Stopped);
@@ -592,6 +662,12 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
                 if (GUILayout.Button("<size=30>RETURN</size>", GUILayout.Height(40)))
                 {
+                    //Code for a possible 0.9 prerelease update
+                    if (freezeTimeLeft)
+                    {
+                        freezeTimeLeft = false;
+                    }
+                    //Code for a possible 0.9 prerelease update
                     getTimeLeft = false;
                     getTimeBefore = false;
                     if (startEngines)
@@ -692,6 +768,66 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
         startedThrustChanger = false;
     }
 
+    //Code for getting the amount of delta V in the current stage (for possible 0.9 prerelease update)
+    private double GetCurrentDeltaV()
+    {
+        var deltaV = currentStageInfo.DeltaVActual;
+        return deltaV;
+    }
+
+    //Code for getting the current stage (for possible 0.9 prerelease update)
+    private void GetCurrentStage()
+    {
+        List<DeltaVStageInfo> vesselStageInfo = GameManager.Instance.Game.ViewController.GetActiveVehicle(true).GetSimVessel(true).VesselDeltaV.StageInfo;
+        currentStageInfo = null;
+        for (int i = 0; i < vesselStageInfo.Count; i++)
+        {
+            if (vesselStageInfo[i].Stage == 1)
+            {
+                currentStageInfo = vesselStageInfo[i];
+            }
+        }
+    }
+
+    //Code for activating the next stage on a vehicle (for possible 0.9 prerelease update)
+    private void ActivateStageIfNoEngines()
+    {
+        if (currentStageInfo != null)
+        {
+            if (currentStageInfo.Stage == 1 && currentStageInfo.EnginesInStage.Count == 0)
+            {
+                activeVessel.GetSimVessel(true).ActivateNextStage();
+            }
+            else
+            {
+                return;
+            }
+        }
+    }
+
+    //Code for staging the current vehicle until an engine is found in the current stage (for possible 0.9 prerelease update)
+    private IEnumerator StageUntilEngineFound()
+    {
+        freezeTimeLeft = true;
+        GetCurrentStage();
+        yield return new WaitForEndOfFrame();
+        while (currentStageInfo.EnginesInStage.Count == 0)
+        {
+            ActivateStageIfNoEngines();
+            yield return new WaitForSeconds(2f);
+            GetCurrentStage();
+            yield return new WaitForSeconds(2f);
+        }
+        yield return new WaitForEndOfFrame();
+        if (currentStageInfo.EnginesInStage.Count >= 1)
+        {
+            activeVessel.SetStage(true);
+        }
+        yield return new WaitForEndOfFrame();
+        freezeTimeLeft = false;
+        StopCoroutine(StageUntilEngineFound());
+    }
+
     private enum BurnStatus
     {
         None,
@@ -755,4 +891,13 @@ public class BurnControllerPlugin : BaseSpaceWarpPlugin
 
     private float currentThrust = 0f;
     private bool startedThrustChanger = false;
+
+    //Variables for a possible 0.9 prerelease update
+    private bool freezeTimeLeft = false;
+    private double currentDeltaV = 0.0f;
+    private DeltaVStageInfo currentStageInfo = null;
+
+    private bool isPrerelease;
+    private string prereleaseName;
+    private bool isDebug;
 }
